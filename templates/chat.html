@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Simple Web Chat</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; margin: 40px; }
+    #messages { border: 1px solid #ccc; height: 300px; overflow-y: auto; padding: 10px; margin-bottom: 10px; }
+    input { padding: 8px; width: 70%; }
+    button { padding: 8px 12px; }
+  </style>
+</head>
+<body>
+  <h2>💬 Web Chat</h2>
+  <div id="messages"></div>
+  <input id="message" placeholder="Type a message..." />
+  <button onclick="sendMessage()">Send</button>
+
+  <script>
+    var socket = io();
+
+    socket.on("message", function(msg) {
+      let div = document.getElementById("messages");
+      div.innerHTML += "<p>" + msg + "</p>";
+      div.scrollTop = div.scrollHeight;
+    });
+
+    function sendMessage() {
+      let input = document.getElementById("message");
+      socket.send(input.value);
+      input.value = "";
+    }
+  </script>
+</body>
+</html>
