@@ -1,17 +1,88 @@
-<!-- Sign Up Page -->
-
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Sign Up</title>
+    <title>Sign Up - CrypTalk</title>
+    <style>
+        body { 
+            background: black; 
+            color: lime; 
+            font-family: 'Courier New', monospace;
+            text-align: center;
+            padding: 50px;
+        }
+        .container {
+            border: 2px solid lime;
+            padding: 30px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        input, button {
+            background: black;
+            color: lime;
+            border: 1px solid lime;
+            padding: 10px;
+            margin: 10px;
+            width: 80%;
+            font-family: 'Courier New', monospace;
+        }
+        button:hover {
+            background: lime;
+            color: black;
+        }
+        .status {
+            margin: 10px;
+            padding: 10px;
+            border: 1px solid lime;
+        }
+    </style>
 </head>
-<body style="background:black;color:lime;font-family:monospace;text-align:center;">
-<h2>📝 Sign Up</h2>
-<form method="POST">
-    <input type="email" name="email" placeholder="Email" required /><br><br>
-    <input type="password" name="password" placeholder="Password" required /><br><br>
-    <button type="submit">Sign Up</button>
-</form>
-<p><a href="/login" style="color:lime;">Login</a></p>
+<body>
+    <div class="container">
+        <h2>🚀 CrypTalk - Sign Up</h2>
+        <div class="status" id="keyStatus">🔑 Generating encryption keys...</div>
+        
+        <form method="POST" id="signupForm">
+            <input type="email" name="email" placeholder="Email" required /><br>
+            <input type="password" name="password" placeholder="Password" required /><br>
+            <input type="hidden" name="public_key" id="publicKey" />
+            <button type="submit" id="submitBtn" disabled>Sign Up</button>
+        </form>
+        
+        <p><a href="/login" style="color:lime;">Already have an account? Login</a></p>
+    </div>
+
+    <script>
+        async function generateKeyPair() {
+            try {
+                const keyPair = await window.crypto.subtle.generateKey(
+                    {
+                        name: "ECDH",
+                        namedCurve: "P-256"
+                    },
+                    true,
+                    ["deriveKey", "deriveBits"]
+                );
+                
+                const publicKey = await window.crypto.subtle.exportKey("spki", keyPair.publicKey);
+                const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(publicKey)));
+                
+                document.getElementById('publicKey').value = publicKeyBase64;
+                document.getElementById('keyStatus').textContent = '✅ Encryption keys generated successfully!';
+                document.getElementById('submitBtn').disabled = false;
+                
+                // Store key pair for later use
+                sessionStorage.setItem('userKeyPair', JSON.stringify({
+                    publicKey: publicKeyBase64,
+                    // Note: private key is not stored in sessionStorage in production
+                }));
+                
+            } catch (error) {
+                document.getElementById('keyStatus').textContent = '❌ Key generation failed: ' + error.message;
+            }
+        }
+
+        // Generate keys when page loads
+        window.addEventListener('load', generateKeyPair);
+    </script>
 </body>
 </html>
