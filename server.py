@@ -6,9 +6,20 @@ import uuid
 import datetime
 import json
 import logging
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = "supersecretkey-windows-2024"
+app.secret_key = os.getenv('SECRET_KEY', 'fallback-secret-key-change-in-production')
+
+# Get other environment variables
+debug_mode = os.getenv('DEBUG', 'False').lower() == 'true'
+host = os.getenv('HOST', '127.0.0.1')
+port = int(os.getenv('PORT', 5000))
+
 socketio = SocketIO(app, cors_allowed_origins="*")
 bcrypt = Bcrypt(app)
 
@@ -123,6 +134,10 @@ def logout():
 # WebSocket handlers
 online_users = {}
 
+@socketio.on("connect")
+def handle_connect():
+    print(f"🔗 Client connected: {request.sid}")
+
 @socketio.on("register")
 def handle_register(user_data):
     online_users[request.sid] = user_data
@@ -146,6 +161,8 @@ def handle_private_message(data):
     
     recipient_sid = None
     recipient_email = None
+    
+    # Find the recipient's socket ID
     for sid, user_data in online_users.items():
         if user_data['user_id'] == data['to_user_id']:
             recipient_sid = sid
@@ -153,21 +170,61 @@ def handle_private_message(data):
             break
     
     if recipient_sid:
-        print(f"📨 Message from {sender_data['email']} to {recipient_email}")
+        print(f"📨 Private message from {sender_data['email']} to {recipient_email}: {data['message'][:50]}...")
         
-        # Forward to recipient
+        # Store message in database
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            
+            # Find or create conversation
+            members_json = json.dumps([sender_data['user_id'], data['to_user_id']])
+            cur.execute("SELECT conv_id FROM conversations WHERE conv_type = 'direct' AND members = ?", (members_json,))
+            
+            conv_row = cur.fetchone()
+            if not conv_row:
+                conv_id = str(uuid.uuid4())
+                cur.execute("INSERT INTO conversations (conv_id, conv_type, members) VALUES (?, 'direct', ?)", 
+                           (conv_id, members_json))
+            else:
+                conv_id = conv_row[0]
+            
+            # Store message (for now storing plain text, will encrypt later)
+            cur.execute("INSERT INTO messages (msg_id, conv_id, sender_id, ciphertext, iv) VALUES (?, ?, ?, ?, ?)",
+                       (str(uuid.uuid4()), conv_id, sender_data['user_id'], data['message'], "plain_text"))
+            
+            conn.commit()
+            cur.close()
+            conn.close()
+            
+        except Exception as e:
+            print(f"Database error: {e}")
+        
+        # Send to recipient (only they can see it)
         emit("private_message", {
             'from_user_id': sender_data['user_id'],
             'from_email': sender_data['email'],
-            'ciphertext': data['ciphertext'],
-            'iv': data['iv']
+            'to_user_id': data['to_user_id'],
+            'message': data['message']
         }, room=recipient_sid)
+        
+        # Also send back to sender as confirmation (only they can see it)
+        emit("private_message", {
+            'from_user_id': sender_data['user_id'],
+            'from_email': 'You',
+            'to_user_id': data['to_user_id'],
+            'message': data['message']
+        }, room=request.sid)
+        
     else:
-        print(f"❌ Recipient not found for message from {sender_data['email']}")
-
-@socketio.on("connect")
-def handle_connect():
-    print(f"🔗 Client connected: {request.sid}")
+        print(f"❌ Recipient {data['to_user_id']} not found for message from {sender_data['email']}")
+        # Notify sender that recipient is offline
+        emit("private_message", {
+            'from_user_id': 'system',
+            'from_email': 'System',
+            'to_user_id': data['to_user_id'],
+            'message': f"❌ User is offline. Message not delivered."
+        }, room=request.sid)
 
 @socketio.on("disconnect")
 def handle_disconnect():
@@ -194,5 +251,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"⚠️  Database warning: {e}")
     
-    print("🌐 Server starting on http://127.0.0.1:5000")
-    socketio.run(app, host="127.0.0.1", port=5000, debug=False)
+    print(f"🌐 Server starting on http://{host}:{port}")
+    print("📡 WebSocket server ready for connections")
+    socketio.run(app, host=host, port=port, debug=debug_mode)

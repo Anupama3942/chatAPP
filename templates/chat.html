@@ -36,6 +36,19 @@
             font-size: 12px;
             margin-top: 5px;
         }
+        .user-selection {
+            margin: 10px 0;
+            padding: 5px;
+            border: 1px solid lime;
+        }
+        select, button {
+            background: black;
+            color: lime;
+            border: 1px solid lime;
+            padding: 5px;
+            margin: 0 5px;
+            font-family: 'Courier New', monospace;
+        }
     </style>
 </head>
 <body>
@@ -45,8 +58,21 @@
             <span id="online-count">0 users online</span> |
             <a href="/logout" style="color:lime;">Logout</a>
         </div>
+        
+        <div class="user-selection">
+            <span>Send to: </span>
+            <select id="userSelect">
+                <option value="">-- Select User --</option>
+            </select>
+            <button onclick="showUserList()">Refresh Users</button>
+            <span id="selectedUser" style="color:cyan; margin-left: 10px;"></span>
+        </div>
+        
         <div id="terminal"></div>
-        <div class="help-text">💡 Type your message and press ENTER to send. Online users will appear above.</div>
+        <div class="help-text">
+            💡 Select a user from dropdown, type message and press ENTER to send. 
+            Only you and the selected user can see messages.
+        </div>
     </div>
 
     <script>
@@ -72,9 +98,10 @@
         // Socket.io connection
         const socket = io();
 
-        // Store online users
+        // Store online users and selected user
         const onlineUsersMap = new Map();
         let currentInput = '';
+        let selectedUser = null;
 
         // E2EE Crypto functions
         async function generateKeyPair() {
@@ -119,13 +146,38 @@
                 
                 window.userKeyPair = keyPair;
                 term.writeln('\r\n🔐 Encryption keys generated and registered');
-                term.writeln('💬 Type messages and press ENTER to send');
+                term.writeln('💬 Select a user and type messages (press ENTER to send)');
                 term.writeln('📱 Open another browser window to test with multiple users\r\n');
                 term.write('> ');
                 
             } catch (error) {
                 term.writeln('\r\n❌ Key generation failed: ' + error.message);
                 term.write('> ');
+            }
+        }
+
+        // Update user dropdown
+        function updateUserDropdown() {
+            const userSelect = document.getElementById('userSelect');
+            const selectedUserSpan = document.getElementById('selectedUser');
+            
+            userSelect.innerHTML = '<option value="">-- Select User --</option>';
+            
+            const onlineUsers = Array.from(onlineUsersMap.values());
+            const otherUsers = onlineUsers.filter(u => u.user_id !== userId);
+            
+            otherUsers.forEach(user => {
+                const option = document.createElement('option');
+                option.value = user.user_id;
+                option.textContent = user.email;
+                userSelect.appendChild(option);
+            });
+            
+            // Update selected user display
+            if (selectedUser) {
+                selectedUserSpan.textContent = `Selected: ${selectedUser.email}`;
+            } else {
+                selectedUserSpan.textContent = 'No user selected';
             }
         }
 
@@ -139,6 +191,9 @@
                 onlineUsersMap.set(user.user_id, user);
             });
             
+            // Update dropdown
+            updateUserDropdown();
+            
             // Show online users in terminal
             if (users.length > 0) {
                 term.write('\x1b[2K\r'); // Clear current line
@@ -148,9 +203,12 @@
         });
 
         socket.on("private_message", async function(data) {
-            term.writeln(`\r\n📨 ${data.from_email}: [Encrypted message received]`);
-            term.writeln('   🔐 Message is encrypted - decryption would happen here');
-            term.write('> ' + currentInput);
+            // Only show messages that are meant for this user
+            if (data.to_user_id === userId || data.from_user_id === userId) {
+                const senderName = data.from_user_id === userId ? 'You' : data.from_email;
+                term.writeln(`\r\n💬 ${senderName}: ${data.message}`);
+                term.write('> ' + currentInput);
+            }
         });
 
         socket.on("connect", function() {
@@ -162,12 +220,42 @@
             term.writeln('\r\n❌ Disconnected from server');
         });
 
+        // User selection
+        document.getElementById('userSelect').addEventListener('change', function() {
+            const selectedUserId = this.value;
+            if (selectedUserId) {
+                selectedUser = onlineUsersMap.get(selectedUserId);
+                term.writeln(`\r\n✅ Selected user: ${selectedUser.email}`);
+                term.write('> ' + currentInput);
+            } else {
+                selectedUser = null;
+                term.writeln('\r\n❌ No user selected');
+                term.write('> ' + currentInput);
+            }
+            updateUserDropdown();
+        });
+
+        function showUserList() {
+            const onlineUsers = Array.from(onlineUsersMap.values());
+            term.writeln('\r\n📋 Online Users:');
+            onlineUsers.forEach(user => {
+                const status = user.user_id === userId ? ' (You)' : '';
+                term.writeln(`   👤 ${user.email}${status}`);
+            });
+            term.write('> ' + currentInput);
+        }
+
         // Terminal input handling
         term.onData(function(data) {
             if (data === '\r') { // Enter key - send message
-                if (currentInput.trim()) {
+                if (currentInput.trim() && selectedUser) {
                     sendMessage(currentInput);
                     currentInput = '';
+                    term.write('\r\n> ');
+                } else if (currentInput.trim() && !selectedUser) {
+                    term.writeln('\r\n❌ Please select a user first!');
+                    term.write('> ' + currentInput);
+                } else {
                     term.write('\r\n> ');
                 }
             } else if (data === '\x7f') { // Backspace
@@ -185,27 +273,26 @@
         });
 
         function sendMessage(message) {
-            const onlineUsers = Array.from(onlineUsersMap.values());
-            const otherUsers = onlineUsers.filter(u => u.user_id !== userId);
-            
-            if (otherUsers.length > 0) {
-                const targetUser = otherUsers[0]; // Send to first online user
-                
-                // For now, send plain text until we fix encryption
-                socket.emit("private_message", {
-                    to_user_id: targetUser.user_id,
-                    ciphertext: message, // This should be encrypted in final version
-                    iv: "temp_iv" // This should be proper IV in final version
-                });
-                
-                term.writeln(`\r\n📤 You → ${targetUser.email}: ${message}`);
-            } else {
-                term.writeln('\r\n❌ No other users online to send message to');
+            if (!selectedUser) {
+                term.writeln('\r\n❌ No user selected! Please choose a user from the dropdown.');
+                term.write('> ');
+                return;
             }
+
+            // Send plain text message (we'll add encryption later)
+            socket.emit("private_message", {
+                to_user_id: selectedUser.user_id,
+                message: message,
+                from_user_id: userId,
+                from_email: userEmail
+            });
+            
+            // Show message in your own terminal immediately
+            term.writeln(`\r\n💬 You → ${selectedUser.email}: ${message}`);
         }
 
         // Initialize
-        term.writeln('🚀 CrypTalk v2.0 - Secure E2EE Chat');
+        term.writeln('🚀 CrypTalk v2.0 - Secure Private Chat');
         term.writeln('🔌 Connecting to server...');
 
         // Handle window resize
