@@ -1,0 +1,12 @@
+# Flask Secret Key - Generate a new one for production!
+SECRET_KEY=your_generated_secret_key_here_64_chars_long
+
+# Database configuration
+DATABASE_URL=sqlite:///cryptalk.db
+
+# Debug mode - set to False in production
+DEBUG=False
+
+# Optional: Server configuration
+HOST=127.0.0.1
+PORT=5000
