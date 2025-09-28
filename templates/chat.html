@@ -1,69 +1,68 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Private Chat</title>
+  <title>Secure Chat</title>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
   <style>
-    body { font-family: monospace; background: black; color: lime; text-align: center; }
-    #users { margin: 10px; border: 1px solid lime; padding: 5px; }
-    #messages { border: 1px solid lime; height: 300px; overflow-y: auto; padding: 10px; margin: 10px; }
-    input, select { padding: 5px; margin: 5px; }
-    button { padding: 5px 10px; background: lime; color: black; border: none; cursor: pointer; }
+    body { background:black;color:lime;font-family:monospace;text-align:center; }
+    #users { margin:10px; border:1px solid lime; padding:5px; }
+    #messages { border:1px solid lime;height:300px;overflow-y:auto;padding:10px;margin:10px;text-align:left; }
+    input, select, button { background:black;color:lime;border:1px solid lime;padding:5px;margin:2px; }
   </style>
 </head>
 <body>
-  <h2>🔒 DOS-Style Private Chat</h2>
-  <div>
-    <input id="username" placeholder="Enter username" />
-    <button onclick="registerUser()">Join</button>
-  </div>
+<h2>💬 Secure DOS-Style Chat</h2>
+<p>Welcome: {{ username }} | <a href="/logout" style="color:lime;">Logout</a></p>
 
-  <div id="chat" style="display:none;">
-    <div id="users">Online Users: <select id="userlist"></select></div>
-    <div id="messages"></div>
-    <input id="message" placeholder="Type message..." />
-    <button onclick="sendMessage()">Send</button>
-  </div>
+<div id="users">Online Users: <select id="userlist"></select></div>
+<div id="messages"></div>
+<input id="message" placeholder="Type message..." />
+<button onclick="sendMessage()">Send</button>
 
-  <script>
-    var socket = io();
-    var myName = "";
+<script>
+  var socket = io();
+  var myName = "{{ username }}";
 
-    function registerUser() {
-      myName = document.getElementById("username").value;
-      if (myName.trim() === "") return;
-      socket.emit("register", myName);
-      document.getElementById("username").style.display = "none";
-      document.querySelector("button").style.display = "none";
-      document.getElementById("chat").style.display = "block";
-    }
+  // Generate a random 128-bit AES key per session
+  function generateAESKey() {
+    return CryptoJS.lib.WordArray.random(16).toString(); 
+  }
+  var sessionKey = generateAESKey(); // unique per user session
+  console.log("Session AES key:", sessionKey);
 
-    socket.on("user_list", function(users) {
-      let userlist = document.getElementById("userlist");
-      userlist.innerHTML = "";
-      users.forEach(u => {
-        if (u !== myName) {
-          let opt = document.createElement("option");
-          opt.value = u; opt.text = u;
-          userlist.appendChild(opt);
-        }
-      });
+  // Register user to server
+  socket.emit("register", myName);
+
+  // Update online user list
+  socket.on("user_list", function(users){
+    let userlist = document.getElementById("userlist");
+    userlist.innerHTML = "";
+    users.forEach(u=>{
+      let opt = document.createElement("option"); opt.value=u; opt.text=u;
+      userlist.appendChild(opt);
     });
+  });
 
-    function sendMessage() {
-      let msg = document.getElementById("message").value;
-      let to = document.getElementById("userlist").value;
-      if (msg.trim() !== "" && to) {
-        socket.emit("private_message", {to: to, message: msg});
-        document.getElementById("message").value = "";
-      }
+  function sendMessage(){
+    let msg = document.getElementById("message").value;
+    let to = document.getElementById("userlist").value;
+    if(msg.trim()!=="" && to){
+      // Encrypt before sending with sessionKey
+      let ciphertext = CryptoJS.AES.encrypt(msg, sessionKey).toString();
+      socket.emit("private_message",{to:to,message:ciphertext});
+      document.getElementById("message").value = "";
     }
+  }
 
-    socket.on("private_message", function(data) {
-      let div = document.getElementById("messages");
-      div.innerHTML += "<p><b>" + data.from + ":</b> " + data.message + "</p>";
-      div.scrollTop = div.scrollHeight;
-    });
-  </script>
+  socket.on("private_message", function(data){
+    // Decrypt with sessionKey
+    let bytes = CryptoJS.AES.decrypt(data.message, sessionKey);
+    let text = bytes.toString(CryptoJS.enc.Utf8);
+    let div = document.getElementById("messages");
+    div.innerHTML += "<p><b>"+data.from+":</b> "+text+"</p>";
+    div.scrollTop = div.scrollHeight;
+  });
+</script>
 </body>
 </html>
