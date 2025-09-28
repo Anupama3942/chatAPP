@@ -10,3 +10,6 @@ DEBUG=False
 # Optional: Server configuration
 HOST=127.0.0.1
 PORT=5000
+
+Generate a secure key
+python -c "import secrets; print(secrets.token_hex(32))"
