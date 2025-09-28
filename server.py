@@ -1,3 +1,5 @@
+#server.py
+
 from flask import Flask, render_template, request, redirect, url_for
 from flask_socketio import SocketIO, emit
 from flask_bcrypt import Bcrypt
@@ -91,7 +93,8 @@ users = {}  # {sid: username}
 @socketio.on("register")
 def register(username):
     users[request.sid] = username
-    emit("user_list", [u for u in users.values() if u != username], broadcast=True)
+    # Send full user list to everyone
+    emit("user_list", list(users.values()), broadcast=True)
 
 @socketio.on("private_message")
 def private_message(data):
@@ -116,7 +119,7 @@ def private_message(data):
 def disconnect():
     username = users.pop(request.sid, None)
     if username:
-        emit("user_list", [u for u in users.values()], broadcast=True)
+        emit("user_list", list(users.values()), broadcast=True)
 
 if __name__ == "__main__":
     socketio.run(app, host="127.0.0.1", port=5000, debug=True)
