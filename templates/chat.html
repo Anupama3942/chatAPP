@@ -1,35 +1,69 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Simple Web Chat</title>
+  <title>Private Chat</title>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin: 40px; }
-    #messages { border: 1px solid #ccc; height: 300px; overflow-y: auto; padding: 10px; margin-bottom: 10px; }
-    input { padding: 8px; width: 70%; }
-    button { padding: 8px 12px; }
+    body { font-family: monospace; background: black; color: lime; text-align: center; }
+    #users { margin: 10px; border: 1px solid lime; padding: 5px; }
+    #messages { border: 1px solid lime; height: 300px; overflow-y: auto; padding: 10px; margin: 10px; }
+    input, select { padding: 5px; margin: 5px; }
+    button { padding: 5px 10px; background: lime; color: black; border: none; cursor: pointer; }
   </style>
 </head>
 <body>
-  <h2>💬 Web Chat</h2>
-  <div id="messages"></div>
-  <input id="message" placeholder="Type a message..." />
-  <button onclick="sendMessage()">Send</button>
+  <h2>🔒 DOS-Style Private Chat</h2>
+  <div>
+    <input id="username" placeholder="Enter username" />
+    <button onclick="registerUser()">Join</button>
+  </div>
+
+  <div id="chat" style="display:none;">
+    <div id="users">Online Users: <select id="userlist"></select></div>
+    <div id="messages"></div>
+    <input id="message" placeholder="Type message..." />
+    <button onclick="sendMessage()">Send</button>
+  </div>
 
   <script>
     var socket = io();
+    var myName = "";
 
-    socket.on("message", function(msg) {
-      let div = document.getElementById("messages");
-      div.innerHTML += "<p>" + msg + "</p>";
-      div.scrollTop = div.scrollHeight;
+    function registerUser() {
+      myName = document.getElementById("username").value;
+      if (myName.trim() === "") return;
+      socket.emit("register", myName);
+      document.getElementById("username").style.display = "none";
+      document.querySelector("button").style.display = "none";
+      document.getElementById("chat").style.display = "block";
+    }
+
+    socket.on("user_list", function(users) {
+      let userlist = document.getElementById("userlist");
+      userlist.innerHTML = "";
+      users.forEach(u => {
+        if (u !== myName) {
+          let opt = document.createElement("option");
+          opt.value = u; opt.text = u;
+          userlist.appendChild(opt);
+        }
+      });
     });
 
     function sendMessage() {
-      let input = document.getElementById("message");
-      socket.send(input.value);
-      input.value = "";
+      let msg = document.getElementById("message").value;
+      let to = document.getElementById("userlist").value;
+      if (msg.trim() !== "" && to) {
+        socket.emit("private_message", {to: to, message: msg});
+        document.getElementById("message").value = "";
+      }
     }
+
+    socket.on("private_message", function(data) {
+      let div = document.getElementById("messages");
+      div.innerHTML += "<p><b>" + data.from + ":</b> " + data.message + "</p>";
+      div.scrollTop = div.scrollHeight;
+    });
   </script>
 </body>
 </html>
